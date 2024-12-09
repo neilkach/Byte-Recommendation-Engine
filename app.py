@@ -4,6 +4,7 @@ import os
 import openai
 from dotenv import load_dotenv
 import random
+import requests
 
 app = Flask(__name__)
 
@@ -15,10 +16,10 @@ DB_USER = os.getenv('DB_USER')
 DB_PASSWORD = os.getenv('DB_PASSWORD')  
 DB_NAME = os.getenv('DB_NAME')  
 openai.api_key = os.getenv('OPENAI_API_KEY')
+menu_api_key = os.getenv('MENU_API_KEY')
 
 # Establish a database connection
 def get_db_connection():
-    print(DB_HOST)
     conn = mysql.connector.connect(
         host=DB_HOST,
         user=DB_USER,
@@ -61,9 +62,33 @@ def create_record():
 
     return jsonify({'message': 'Record created successfully'}), 201
 
+def get_menu(date=None):
+    url = 'https://menu-data-api2-656384740055.us-central1.run.app/api/objects'
+
+    headers = {
+        'X-API-Key':menu_api_key
+    }
+
+    params = {}
+    if date:
+        params['date'] = date
+
+    print(f"Making request with headers: {headers}")
+    print(f"Parameters: {params}")
+
+    response = requests.get(url, headers=headers, params=params)
+    print(f"Status Code: {response.status_code}")
+    print(f"Response Text: {response.text}")
+
+    if response.status_code == 200:
+        return response.json()
+    else:
+        return None
+
 # Fetch meals and get a recommendation
 @app.route('/recommend', methods=['GET'])
 def recommend_meal():
+    return get_menu()
     # Optional query parameters for filtering (e.g., category or calorie range)
     # category = request.args.get('category')  # e.g., "Vegetarian"
     # max_calories = request.args.get('max_calories')  # e.g., "500"
