@@ -1,14 +1,20 @@
 from flask import Flask, jsonify, request
 import mysql.connector
 import os
+import openai
+from dotenv import load_dotenv
+import random
 
 app = Flask(__name__)
 
-# Database connection parameters from environment variables
-DB_HOST = os.getenv('DB_HOST', 'localhost')
-DB_USER = os.getenv('DB_USER', 'admin')  # replace with your RDS username
-DB_PASSWORD = os.getenv('DB_PASSWORD', 'yourpassword')  # replace with your RDS password
-DB_NAME = os.getenv('DB_NAME', 'mydatabase')  # replace with your RDS database name
+load_dotenv()
+
+# Database connection parameters from environment variables defined in .env file
+DB_HOST = os.getenv('DB_HOST')
+DB_USER = os.getenv('DB_USER')  
+DB_PASSWORD = os.getenv('DB_PASSWORD')  
+DB_NAME = os.getenv('DB_NAME')  
+openai.api_key = os.getenv('OPENAI_API_KEY')
 
 # Establish a database connection
 def get_db_connection():
@@ -54,6 +60,75 @@ def create_record():
     conn.close()
 
     return jsonify({'message': 'Record created successfully'}), 201
+
+# Fetch meals and get a recommendation
+@app.route('/recommend', methods=['GET'])
+def recommend_meal():
+    # Optional query parameters for filtering (e.g., category or calorie range)
+    # category = request.args.get('category')  # e.g., "Vegetarian"
+    # max_calories = request.args.get('max_calories')  # e.g., "500"
+
+    # Query meals from the database
+    connection = get_db_connection()
+    cursor = connection.cursor(dictionary=True)
+    
+    id = random.randint(1,2)
+    
+    query = f"SELECT * FROM meals where id = {id}"
+    filters = []
+    params = []
+
+    # if category:
+    #     filters.append("category = %s")
+    #     params.append(category)
+    # if max_calories:
+    #     filters.append("calories <= %s")
+    #     params.append(max_calories)
+
+    # if filters:
+    #     query += " WHERE " + " AND ".join(filters)
+    
+    cursor.execute(query, params)
+    meals = cursor.fetchall()
+    cursor.close()
+    connection.close()
+    
+    return jsonify(meals)
+
+    if not meals:
+        return jsonify({'error': 'No meals found for the given criteria.'}), 404
+
+    # Prepare a prompt for OpenAI
+    meal_descriptions = "\n".join(
+        f"{meal['date']} - {meal['main_dish']}: {meal['side']})"
+        for meal in meals
+    )
+    prompt = (
+        "Based on the following meals available in the database, recommend a meal for today:\n\n"
+        f"{meal_descriptions}\n\n"
+        "Please provide a single meal recommendation and explain why it might be a good choice."
+    )
+
+    # Query OpenAI for a recommendation
+    try:
+        client = OpenAI()
+        completion = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful meal recommendation assistant."},
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        )
+
+        recommendation = completion.choices[0].message
+    except Exception as e:
+        return jsonify({'error': 'Error interacting with OpenAI', 'details': str(e)}), 500
+
+    # Return the recommendation
+    return jsonify({'recommendation': recommendation})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=3000)  # Expose the API on port 80
