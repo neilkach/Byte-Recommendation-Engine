@@ -3,3 +3,5 @@ mysql-connector-python
 openai
 python-dotenv
 requests
+DateTime
+firebase-admin

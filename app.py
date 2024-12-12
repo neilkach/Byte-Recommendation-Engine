@@ -5,6 +5,9 @@ import openai
 from dotenv import load_dotenv
 import random
 import requests
+from datetime import datetime
+import firebase_admin
+from firebase_admin import credentials, firestore
 
 app = Flask(__name__)
 
@@ -17,6 +20,7 @@ DB_PASSWORD = os.getenv('DB_PASSWORD')
 DB_NAME = os.getenv('DB_NAME')  
 openai.api_key = os.getenv('OPENAI_API_KEY')
 menu_api_key = os.getenv('MENU_API_KEY')
+firebase_api_key = os.getenv('FIREBASE_API_KEY')
 
 # Establish a database connection
 def get_db_connection():
@@ -27,6 +31,21 @@ def get_db_connection():
         database=DB_NAME
     )
     return conn
+
+def get_firestore_connection():
+    # Initialize Firestore connection with the Admin SDK
+    try:
+        # If you're using service account credentials
+        cred = credentials.ApplicationDefault('cumulonimbus-439521-8a1a8993a810.json')
+        firebase_admin.initialize_app(cred, {
+            'projectId': project_id,
+        })
+        
+        print("Connected to Firestore!")
+        return firestore.client()
+    except Exception as e:
+        print(f"Failed to connect to Firestore: {e}")
+        return None    
 
 # Get a record by ID
 @app.route('/records/<int:id>', methods=['GET'])
@@ -84,50 +103,52 @@ def get_menu(date=None):
         return response.json()
     else:
         return None
+    
+# Fetch a random meal recommendation
+@app.route('/recommend_special', methods=['GET'])
+def hardcode():
+    now = datetime.utcnow()
+    # Format the date in the specified format
+    formatted_date = now.strftime("%a, %d %b %Y 00:00:00 GMT")
+    
+    # options = get_menu(formatted_date)
+    # meal_times = ['breakfast', 'lunch', 'dinner']
+    # breakfast, lunch, dinner = [], [], []
+    # for time in meal_time:
+    #     breakfast.append(get_menu(date=formatted_date, meal_time=time))
+    #     lunch.append(option)
+    #     dinner.append(option)
+    # r = min(len(breakfast), len(lunch), len(dinner))
+    # random_meal = random.randint(0,r)
+    
+    breakfast = get_menu(date = formatted_date, meal_time = 'breakfast', line_type = 'Main line')
+    lunch = get_menu(date = formatted_date, meal_time = 'lunch', line_type = 'Flame')
+    dinner = get_menu(date = formatted_date, meal_time = 'dinner', line_type = 'Main line')
+    print(breakfast, lunch, dinner)
+    return jsonify({'Breakfast recommendation': breakfast, 'Lunch recommendation': lunch,
+                    'Dinner recommendation': dinner})
 
 # Fetch meals and get a recommendation
 @app.route('/recommend', methods=['GET'])
 def recommend_meal():
-    return get_menu()
-    # Optional query parameters for filtering (e.g., category or calorie range)
-    # category = request.args.get('category')  # e.g., "Vegetarian"
-    # max_calories = request.args.get('max_calories')  # e.g., "500"
+    uid = request.args.get('uid')
+    # fs_client = get_firestore_connection()
 
-    # Query meals from the database
-    connection = get_db_connection()
-    cursor = connection.cursor(dictionary=True)
-    
-    id = random.randint(1,2)
-    
-    query = f"SELECT * FROM meals where id = {id}"
-    filters = []
-    params = []
+    # same for user ratings
+    user_reviews = fs_client.collection('userRatings').document(uid).get()
+    print(user_reviews)
+    user_reviews_dicts = [review.to_dict() for review in user_reviews]
+    print(user_reviews_dicts)
+    user_reviews_dicts.sort(key = lambda x: x['lastUpdated'])
 
-    # if category:
-    #     filters.append("category = %s")
-    #     params.append(category)
-    # if max_calories:
-    #     filters.append("calories <= %s")
-    #     params.append(max_calories)
+    # if not meals:
+    #     return jsonify({'error': 'No meals found for the given criteria.'}), 404
 
-    # if filters:
-    #     query += " WHERE " + " AND ".join(filters)
-    
-    cursor.execute(query, params)
-    meals = cursor.fetchall()
-    cursor.close()
-    connection.close()
-    
-    return jsonify(meals)
-
-    if not meals:
-        return jsonify({'error': 'No meals found for the given criteria.'}), 404
-
-    # Prepare a prompt for OpenAI
-    meal_descriptions = "\n".join(
-        f"{meal['date']} - {meal['main_dish']}: {meal['side']})"
-        for meal in meals
-    )
+    # # Prepare a prompt for OpenAI
+    # meal_descriptions = "\n".join(
+    #     f"{meal['date']} - {meal['main_dish']}: {meal['side']})"
+    #     for meal in meals
+    # )
     prompt = (
         "Based on the following meals available in the database, recommend a meal for today:\n\n"
         f"{meal_descriptions}\n\n"
@@ -152,8 +173,11 @@ def recommend_meal():
     except Exception as e:
         return jsonify({'error': 'Error interacting with OpenAI', 'details': str(e)}), 500
 
-    # Return the recommendation
-    return jsonify({'recommendation': recommendation})
+    return jsonify({'Breakfast recommendation': breakfast[random_meal], 'Lunch recommendation': lunch[random_meal],
+                    'Dinner recommendation': dinner[random_meal]})
 
 if __name__ == '__main__':
+    fs_client = get_firestore_connection()
+    #get global Ratings from firestore backend once
+    global_reviews = fs_client.collection('globalRatings')
     app.run(host='0.0.0.0', port=3000)  # Expose the API on port 80
