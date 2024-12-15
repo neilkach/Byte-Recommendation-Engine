@@ -178,11 +178,12 @@ def recommend_meal():
         conn.commit()
         cursor.close()
         conn.close()
+        
+        return jsonify({'Breakfast recommendation': breakfast, 'Lunch recommendation': lunch,
+                'Dinner recommendation': dinner})
     except Exception as e:
         return jsonify({'error': 'Error interacting with OpenAI', 'details': str(e)}), 500
 
-    return jsonify({'Breakfast recommendation': breakfast, 'Lunch recommendation': lunch,
-                    'Dinner recommendation': dinner})
     
 # Fetch a hardcoded meal recommendation just for UI testing purposes (since OpenAPI calls cost money)
 @app.route('/recommend_special', methods=['GET'])
